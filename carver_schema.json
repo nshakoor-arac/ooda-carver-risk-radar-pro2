@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CARVER Asset List",
+  "description": "Array or object with 'assets' of CARVER asset records",
+  "oneOf": [
+    {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Asset"
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "assets"
+      ],
+      "properties": {
+        "assets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Asset"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  ],
+  "$defs": {
+    "Asset": {
+      "type": "object",
+      "required": [
+        "name",
+        "type",
+        "country",
+        "location",
+        "C",
+        "A",
+        "R",
+        "V",
+        "E",
+        "Rz"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "country": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "C": {
+          "type": "number",
+          "minimum": 0
+        },
+        "A": {
+          "type": "number",
+          "minimum": 0
+        },
+        "R": {
+          "type": "number",
+          "minimum": 0
+        },
+        "V": {
+          "type": "number",
+          "minimum": 0
+        },
+        "E": {
+          "type": "number",
+          "minimum": 0
+        },
+        "Rz": {
+          "type": "number",
+          "minimum": 0
+        },
+        "notes": {
+          "type": "string"
+        },
+        "L": {
+          "type": "number",
+          "minimum": 0
+        },
+        "I": {
+          "type": "number",
+          "minimum": 0
+        },
+        "totalCarver": {
+          "type": "number",
+          "minimum": 0
+        },
+        "pa": {
+          "type": "number",
+          "minimum": 0
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

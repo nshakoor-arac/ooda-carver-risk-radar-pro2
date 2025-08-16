@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OODA–CARVER Radar Dashboard • Pro‑2</title>
+<style>
+:root{
+  --bg:#0b1220; --card:#0f172a; --chip:#172135; --ink:#e6edf7; --muted:#93a2bf;
+  --border:#22314f; --ring:#1b2942; --grid:#23324f; --accent:#4f7fff;
+  --ok:#10b981; --warn:#f59e0b; --bad:#ef4444;
+}
+[data-theme="light"]{
+  --bg:#f6f7fb; --card:#ffffff; --chip:#f1f5f9; --ink:#0f172a; --muted:#475569;
+  --border:#e5e7eb; --ring:#e2e8f0; --grid:#e5e7eb; --accent:#2563eb;
+}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(1200px 650px at 10% -10%,rgba(255,255,255,.06),transparent),var(--bg);color:var(--ink);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+.container{max-width:1200px;margin:0 auto;padding:16px}
+h1{margin:0 0 12px;font-size:22px;font-weight:800}
+.controls{display:grid;grid-template-columns:1fr auto auto auto auto;gap:10px;align-items:end;margin-bottom:12px}
+.select,.btn,input,textarea{padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:var(--chip);color:var(--ink)}
+.btn{background:var(--accent);color:#fff;cursor:pointer}
+.btn-outline{background:transparent;color:var(--ink)}
+.small{font-size:12px;color:var(--muted)}
+.row{display:grid;grid-template-columns:1fr 360px;gap:12px}
+.card{border:1px solid var(--border);background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,0)),var(--card);border-radius:14px;padding:12px}
+.radar{position:relative;height:460px}
+canvas{display:block;width:100%;height:100%}
+.grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.kpi-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:10px}
+.kpi-title{font-size:12px;color:var(--muted);margin-bottom:6px}
+.gauge{width:100%;height:160px}
+.legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.legend .item{display:inline-flex;align-items:center;gap:6px;padding:6px 8px;background:var(--chip);border:1px solid var(--border);border-radius:999px;font-size:12px}
+.sw{width:10px;height:10px;border-radius:2px}
+.badge{display:inline-block;padding:4px 8px;border-radius:999px;font-weight:700;font-size:12px}
+.badge.vlow{background:#064e3b;color:#d1fae5;border:1px solid #047857}
+.badge.low{background:#065f46;color:#a7f3d0;border:1px solid #0f766e}
+.badge.med{background:#78350f;color:#fde68a;border:1px solid #b45309}
+.badge.high{background:#7c2d12;color:#fdba74;border:1px solid #c2410c}
+.badge.crit{background:#7f1d1d;color:#fecaca;border:1px solid #dc2626}
+.tabs{display:flex;gap:8px;margin:8px 0 12px}
+.tabbtn{padding:8px 12px;border:1px solid var(--border);background:var(--chip);border-radius:12px;color:var(--ink);cursor:pointer}
+.tabbtn.active{background:var(--accent);color:#fff;border-color:transparent}
+.tab{display:none}
+.tab.active{display:block}
+.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap;text-align:left}
+th{position:sticky;top:0;background:var(--chip);color:var(--ink)}
+.form-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.info-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.empty{padding:10px;border-radius:10px;border:1px dashed var(--border);background:rgba(0,0,0,.04)}
+@media (max-width:1000px){.row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}}
+</style>
+<!-- External Libraries for PDF and Excel Export -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+<div class="container">
+  <h1>OODA–CARVER Radar Dashboard</h1>
+
+  <div class="controls card">
+    <div>
+      <label class="small">Select Asset</label><br>
+      <select id="assetSelect" class="select" disabled><option>Import data to begin</option></select>
+    </div>
+    <div>
+      <label class="small">Scoring scale</label><br>
+      <select id="scaleSelect" class="select"><option value="5">1 to 5</option><option value="10">1 to 10</option></select>
+    </div>
+    <div>
+      <label class="small">Theme</label><br>
+      <select id="themeSelect" class="select"><option value="dark">Dark</option><option value="light">Light</option><option value="auto">Auto</option></select>
+    </div>
+    <div class="group" style="display:flex;gap:8px;align-items:end">
+      <button id="importBtn" class="btn">Import CSV or JSON</button>
+      <button id="schemaBtn" class="btn btn-outline">Schema</button>
+    </div>
+    <div class="group" style="display:flex;gap:8px;align-items:end">
+      <button id="exportPdfBtn" class="btn">Export PDF Report</button>
+      <button id="exportJsonBtn" class="btn btn-outline">JSON</button>
+      <button id="exportCsvBtn" class="btn btn-outline">CSV</button>
+      <button id="exportXlsBtn" class="btn btn-outline">Excel</button>
+      <input id="fileInput" type="file" accept=".csv,.json,text/csv,application/json" style="display:none">
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tabbtn active" data-tab="dashboard">Dashboard</button>
+    <button class="tabbtn" data-tab="editor">Editor</button>
+    <button class="tabbtn" data-tab="add">Add Asset</button>
+    <button class="tabbtn" data-tab="method">Methodology</button>
+  </div>
+
+  <div id="schemaPanel" class="card" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-weight:700">Schema and Templates</div>
+      <div class="group">
+        <button id="downloadJsonBtn" class="btn btn-outline">Download JSON schema</button>
+        <button id="downloadCsvBtn" class="btn btn-outline">Download CSV template</button>
+        <button id="schemaClose" class="btn">Hide</button>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div>
+        <div class="small" style="margin-bottom:6px">JSON schema</div>
+        <pre id="jsonSchema" class="select" style="white-space:pre;overflow:auto"></pre>
+      </div>
+      <div>
+        <div class="small" style="margin-bottom:6px">CSV template</div>
+        <pre id="csvTemplate" class="select" style="white-space:pre;overflow:auto"></pre>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-dashboard" class="tab active">
+    <div class="row">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-weight:700">CARVER Radar</div>
+            <div class="small">Nested translucent polygons, axes C A R V E Rz</div>
+          </div>
+          <div id="riskBadge"></div>
+        </div>
+        <div class="radar"><canvas id="radar"></canvas></div>
+        <div id="legend" class="legend"></div>
+      </div>
+      <div class="grid-2">
+        <div class="kpi-card"><div class="kpi-title">Total CARVER</div><svg id="g_total" class="gauge"></svg></div>
+        <div class="kpi-card"><div class="kpi-title">P(a)</div><svg id="g_pa" class="gauge"></svg></div>
+        <div class="kpi-card"><div class="kpi-title">Likelihood (L)</div><svg id="g_L" class="gauge"></svg></div>
+        <div class="kpi-card"><div class="kpi-title">Impact (I)</div><svg id="g_I" class="gauge"></svg></div>
+        <div class="kpi-card"><div class="kpi-title">Risk Score (L x I)</div><svg id="g_score" class="gauge"></svg></div>
+        <div class="kpi-card"><div class="kpi-title">Risk Rating</div><div id="ratingText" style="font-size:28px;font-weight:800;margin-top:10px"></div><div id="ratingScale" class="small"></div></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:10px">
+      <div style="font-weight:700;margin-bottom:6px">Notes and Location</div>
+      <div id="emptyState" class="empty">No data loaded yet. Click Import above and select a CSV or JSON file.</div>
+      <div id="infoGrid" class="info-grid" style="display:none">
+        <div>
+          <p class="small">Asset</p><div id="f_name"></div>
+          <p class="small">Type</p><div id="f_type"></div>
+          <p class="small">Country</p><div id="f_country"></div>
+          <p class="small">Location</p><div id="f_location"></div>
+        </div>
+        <div>
+          <p class="small">CARVER breakdown</p><div id="f_carver"></div>
+          <p class="small">Notes</p><div id="f_notes"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-editor" class="tab">
+    <div id="editorEmpty" class="card">Load data to edit using Import above.</div>
+    <div id="editorContent" style="display:none">
+      <div class="card" style="display:flex;justify-content:space-between;gap:12px;align-items:end">
+        <div><label class="small">Select Asset to edit</label><br><select id="editSelect" class="select"></select></div>
+        <div class="small" style="color:var(--muted)">Edits update gauges and table instantly</div>
+      </div>
+      <div class="card">
+        <div style="font-weight:700;margin-bottom:6px">Current dataset</div>
+        <div class="table-wrap">
+          <table id="dataTable">
+            <thead><tr><th>Asset</th><th>C</th><th>A</th><th>R</th><th>V</th><th>E</th><th>Rz</th><th>L</th><th>I</th><th>Total</th><th>P(a)</th><th>Score</th><th>Rating</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="kpi-card"><div class="kpi-title">Criticality - C</div><svg id="eg_C" class="gauge"></svg></div>
+        <div class="kpi-card"><div class="kpi-title">Accessibility - A</div><svg id="eg_A" class="gauge"></svg></div>
+        <div class="kpi-card"><div class="kpi-title">Recuperability - R</div><svg id="eg_R" class="gauge"></svg></div>
+        <div class="kpi-card"><div class="kpi-title">Vulnerability - V</div><svg id="eg_V" class="gauge"></svg></div>
+        <div class="kpi-card"><div class="kpi-title">Effect - E</div><svg id="eg_E" class="gauge"></svg></div>
+        <div class="kpi-card"><div class="kpi-title">Recognizability - Rz</div><svg id="eg_Rz" class="gauge"></svg></div>
+      </div>
+      <div class="grid-2" style="margin-top:10px">
+        <div class="kpi-card"><div class="kpi-title">Likelihood - L</div><svg id="eg_L" class="gauge"></svg></div>
+        <div class="kpi-card"><div class="kpi-title">Impact - I</div><svg id="eg_I" class="gauge"></svg></div>
+        <div class="kpi-card"><div class="kpi-title">Total CARVER</div><svg id="eg_total" class="gauge"></svg></div>
+        <div class="kpi-card"><div class="kpi-title">Risk Score</div><svg id="eg_score" class="gauge"></svg></div>
+        <div class="kpi-card"><div class="kpi-title">Risk Rating</div><div id="editRating" style="font-size:22px;font-weight:800;margin-top:8px"></div></div>
+        <div class="kpi-card"><div class="kpi-title">P(a)</div><svg id="eg_pa" class="gauge"></svg></div>
+      </div>
+      <div class="card">
+        <div style="font-weight:700;margin-bottom:6px">Edit CARVER values</div>
+        <div class="form-grid">
+          <div><label class="small">Criticality - C</label><br><input id="in_C" type="number" min="0" step="0.1" class="select"></div>
+          <div><label class="small">Accessibility - A</label><br><input id="in_A" type="number" min="0" step="0.1" class="select"></div>
+          <div><label class="small">Recuperability - R</label><br><input id="in_R" type="number" min="0" step="0.1" class="select"></div>
+          <div><label class="small">Vulnerability - V</label><br><input id="in_V" type="number" min="0" step="0.1" class="select"></div>
+          <div><label class="small">Effect - E</label><br><input id="in_E" type="number" min="0" step="0.1" class="select"></div>
+          <div><label class="small">Recognizability - Rz</label><br><input id="in_Rz" type="number" min="0" step="0.1" class="select"></div>
+          <div style="grid-column:1/-1"><label class="small">Notes</label><br><textarea id="in_notes" rows="3" class="select"></textarea></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-add" class="tab">
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:6px">Add a new asset</div>
+      <div class="form-grid">
+        <div><label class="small">Name</label><br><input id="add_name" type="text" class="select"></div>
+        <div><label class="small">Type</label><br><input id="add_type" type="text" class="select"></div>
+        <div><label class="small">Country</label><br><input id="add_country" type="text" class="select"></div>
+        <div><label class="small">Location</label><br><input id="add_location" type="text" class="select"></div>
+        <div><label class="small">Criticality - C</label><br><input id="add_C" type="number" min="0" step="0.1" value="0" class="select"></div>
+        <div><label class="small">Accessibility - A</label><br><input id="add_A" type="number" min="0" step="0.1" value="0" class="select"></div>
+        <div><label class="small">Recuperability - R</label><br><input id="add_R" type="number" min="0" step="0.1" value="0" class="select"></div>
+        <div><label class="small">Vulnerability - V</label><br><input id="add_V" type="number" min="0" step="0.1" value="0" class="select"></div>
+        <div><label class="small">Effect - E</label><br><input id="add_E" type="number" min="0" step="0.1" value="0" class="select"></div>
+        <div><label class="small">Recognizability - Rz</label><br><input id="add_Rz" type="number" min="0" step="0.1" value="0" class="select"></div>
+        <div style="grid-column:1/-1"><label class="small">Notes</label><br><textarea id="add_notes" rows="3" class="select"></textarea></div>
+      </div>
+      <div style="margin-top:8px" class="group">
+        <button id="add_btn" class="btn">Add Asset</button>
+        <button id="add_clear" class="btn btn-outline">Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-method" class="tab">
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:6px">Methodology – OODA with CARVER within ISO 31000 RMF</div>
+      <p class="small">This section provides a concise reference to align your assessments with an ISO 31000 oriented risk management flow while leveraging OODA and CARVER to drive rapid, iterative analysis.</p>
+      <ol>
+        <li><b>Observe</b> – collect signals from operations, threat intel, and field reports. Curate asset metadata and CARVER inputs and ensure sources are versioned.</li>
+        <li><b>Orient</b> – map observations to context. Normalize CARVER scores to a consistent 1 to 5 or 1 to 10 scale. Calibrate with domain baselines and recent incidents.</li>
+        <li><b>Decide</b> – compare scenarios using CARVER outputs: L, I, risk score, and rating. Prioritize treatments using ISO 31000 options – avoid, reduce, transfer, accept.</li>
+        <li><b>Act</b> – implement controls and contingency steps. Capture notes in the register and re‑score impacted components like Accessibility and Vulnerability.</li>
+      </ol>
+      <p><b>ISO 31000 loop</b> – establish context, assess risk, treat risk, monitor‑review, and record‑report. CARVER supports the analysis step while OODA drives tempo and iteration.</p>
+      <div class="card" style="background:var(--chip)">
+        <div style="font-weight:700;margin-bottom:6px">How Likelihood and Impact are calculated</div>
+        <ul>
+          <li><b>Likelihood (L)</b> = average of Accessibility (A), Vulnerability (V), Recognizability (Rz)</li>
+          <li><b>Impact (I)</b> = average of Criticality (C), Effect (E), Recuperability (R)</li>
+          <li><b>Total CARVER</b> = sum of C + A + R + V + E + Rz</li>
+          <li><b>P(a)</b> = proportion of the total relative to the maximum possible: Total / (6 × Scale)</li>
+          <li><b>Risk Score</b> = L × I; thresholds scale with Scale²</li>
+        </ul>
+        <div class="small">If your input includes explicit values for these, the app respects them. Otherwise the app derives them with the formulas above.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* Tabs */
+document.querySelectorAll('.tabbtn').forEach(btn=>btn.addEventListener('click',()=>{
+  document.querySelectorAll('.tabbtn').forEach(x=>x.classList.remove('active'));
+  btn.classList.add('active');
+  const t=btn.getAttribute('data-tab');
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.getElementById('tab-'+t).classList.add('active');
+}));
+
+/* Theme */
+const themeSelect=document.getElementById('themeSelect');
+const prefersDark=window.matchMedia('(prefers-color-scheme: dark)');
+let theme=localStorage.getItem('themeMode')||'dark';
+function applyTheme(m){document.documentElement.setAttribute('data-theme',m==='auto'?(prefersDark.matches?'dark':'light'):m);}
+function setTheme(m){theme=m;localStorage.setItem('themeMode',m);applyTheme(m);}
+prefersDark.addEventListener('change',()=>{if(theme==='auto') applyTheme('auto');});
+themeSelect.value=theme;applyTheme(theme);themeSelect.addEventListener('change',e=>setTheme(e.target.value));
+
+/* Data */
+let DATA=[];
+let SCALE=Number(localStorage.getItem('carverScale')||5);
+const scaleSelect=document.getElementById('scaleSelect'); scaleSelect.value=String(SCALE);
+scaleSelect.addEventListener('change',e=>{SCALE=Number(e.target.value);localStorage.setItem('carverScale',String(SCALE));recomputeAll();});
+
+/* Header normalization */
+const HEADER_MAP={
+  'name':'name','asset':'name','asset name':'name','title':'name',
+  'type':'type','category':'type',
+  'country':'country','iso3':'country',
+  'location':'location','site':'location','city':'location',
+  'c':'C','criticality':'C',
+  'a':'A','accessibility':'A',
+  'r':'R','recuperability':'R',
+  'v':'V','vulnerability':'V',
+  'e':'E','effect':'E',
+  'rz':'Rz','recognizability':'Rz','recognisability':'Rz',
+  'notes':'notes','remarks':'notes','comment':'notes',
+  'l':'L','likelihood':'L','i':'I','impact':'I',
+  'total':'totalCarver','totalcarver':'totalCarver','sum':'totalCarver',
+  'pa':'pa','p(a)':'pa','probability':'pa',
+  'score':'score','risk score':'score'
+};
+
+/* Helpers */
+function num(x){const v=Number(String(x).trim());return isFinite(v)?v:0;}
+function clamp(v){v=Math.max(0,num(v));return Math.min(SCALE,v);}
+function mapHeaders(obj){const out={};for(const k in obj){const canon=HEADER_MAP[String(k).trim().toLowerCase()]||k;out[canon]=obj[k];}return out;}
+function detectScale(rows){let m=0;rows.forEach(r=>['C','A','R','V','E','Rz'].forEach(k=>{m=Math.max(m,num(r[k]));}));return m>5?10:5;}
+function derive(r){const L=(num(r.A)+num(r.V)+num(r.Rz))/3;const I=(num(r.C)+num(r.E)+num(r.R))/3;const total=num(r.C)+num(r.A)+num(r.R)+num(r.V)+num(r.E)+num(r.Rz);const pa=(SCALE>0)?(total/(6*SCALE)):0;const score=L*I;return {L,I,totalCarver:total,pa,score};}
+function normalize(rec){const a=mapHeaders(rec);const r={name:a.name||'',type:a.type||'',country:a.country||'',location:a.location||'',C:clamp(a.C),A:clamp(a.A),R:clamp(a.R),V:clamp(a.V),E:clamp(a.E),Rz:clamp(a.Rz),notes:a.notes||''};const d=derive(r);r.L=a.L!=''&&a.L!=null?num(a.L):d.L;r.I=a.I!=''&&a.I!=null?num(a.I):d.I;r.totalCarver=a.totalCarver!=''&&a.totalCarver!=null?num(a.totalCarver):d.totalCarver;r.pa=a.pa!=''&&a.pa!=null?num(a.pa):d.pa;r.score=a.score!=''&&a.score!=null?num(a.score):d.score;return r;}
+function recomputeAll(){DATA.forEach(r=>{r.C=clamp(r.C);r.A=clamp(r.A);r.R=clamp(r.R);r.V=clamp(r.V);r.E=clamp(r.E);r.Rz=clamp(r.Rz);const d=derive(r);r.L=d.L;r.I=d.I;r.totalCarver=d.totalCarver;r.pa=d.pa;r.score=d.score;});refreshTable();loadEditFields();updateView();}
+function rating(score){const mx=SCALE*SCALE,f=mx?score/mx:0; if(f>=.8)return'Critical'; if(f>=.6)return'High'; if(f>=.4)return'Medium'; if(f>=.2)return'Low'; return'Very Low';}
+function badge(label){const m={'Very Low':'vlow','Low':'low','Medium':'med','High':'high','Critical':'crit'};return `<span class="badge ${m[label]||'low'}">${label}</span>`;}
+
+/* Canvas radar */
+const radar=document.getElementById('radar'); const rctx=radar.getContext('2d');
+function resizeCanvas(){const dpr=window.devicePixelRatio||1;const rect=radar.getBoundingClientRect();radar.width=rect.width*dpr;radar.height=rect.height*dpr;rctx.setTransform(dpr,0,0,dpr,0,0);}
+window.addEventListener('resize',()=>{resizeCanvas();updateView();});
+function drawGrid(cx,cy,R,axes){rctx.save();rctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--ring').trim()||'#1b2942';rctx.lineWidth=1;const rings=5;for(let i=1;i<=rings;i++){rctx.beginPath();rctx.arc(cx,cy,R*i/rings,0,Math.PI*2);rctx.stroke();}rctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--grid').trim()||'#23324f';for(let a=0;a<axes.length;a++){const ang=-Math.PI/2 + a*2*Math.PI/axes.length;rctx.beginPath();rctx.moveTo(cx,cy);rctx.lineTo(cx+Math.cos(ang)*R,cy+Math.sin(ang)*R);rctx.stroke();}rctx.restore();}
+function hexToRgba(hex,a){const m=hex.replace('#','');const r=parseInt(m.slice(0,2),16),g=parseInt(m.slice(2,4),16),b=parseInt(m.slice(4,6),16);return `rgba(${r},${g},${b},${a})`;}
+const PALETTE=['#4f7fff','#22c55e','#eab308','#f97316','#ef4444','#14b8a6','#a855f7','#f43f5e','#0ea5e9','#84cc16'];
+function drawPoly(cx,cy,R,axes,vals,color){const pts=[];for(let a=0;a<axes.length;a++){const v=Math.max(0,Math.min(SCALE,num(vals[a])||0));const rr=(v/SCALE)*R;const ang=-Math.PI/2 + a*2*Math.PI/axes.length;pts.push([cx+Math.cos(ang)*rr, cy+Math.sin(ang)*rr]);}rctx.beginPath();pts.forEach((p,i)=> i?rctx.lineTo(p[0],p[1]):rctx.moveTo(p[0],p[1]));rctx.closePath();rctx.fillStyle=hexToRgba(color,.18);rctx.strokeStyle=color;rctx.lineWidth=2;rctx.fill();rctx.stroke();}
+
+/* Gauges - Fixed Implementation */
+function drawGauge(id,value,maxValue){
+  const el=document.getElementById(id);
+  if (!el) return;
+  
+  const w=el.clientWidth||280,h=el.clientHeight||160;
+  el.setAttribute('viewBox',`0 0 ${w} ${h}`);
+  while(el.firstChild)el.removeChild(el.firstChild);
+  
+  const cx=w/2,cy=h*0.85,r=Math.min(w*0.4,h*0.7);
+  const ink=getComputedStyle(document.documentElement).getPropertyValue('--ink').trim()||'#e6edf7';
+  const muted=getComputedStyle(document.documentElement).getPropertyValue('--muted').trim()||'#93a2bf';
+  
+  // Color bands for the gauge arc
+  const bands=[
+    {start:0, end:0.2, color:'#10b981'},     // Green
+    {start:0.2, end:0.4, color:'#eab308'},   // Yellow  
+    {start:0.4, end:0.6, color:'#f97316'},   // Orange
+    {start:0.6, end:0.8, color:'#ef4444'},   // Red
+    {start:0.8, end:1.0, color:'#dc2626'}    // Dark Red
+  ];
+  
+  // Draw color bands as arcs
+  bands.forEach(band => {
+    const startAngle = Math.PI + (band.start * Math.PI);
+    const endAngle = Math.PI + (band.end * Math.PI);
+    
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    const x1 = cx + Math.cos(startAngle) * r;
+    const y1 = cy + Math.sin(startAngle) * r;
+    const x2 = cx + Math.cos(endAngle) * r;
+    const y2 = cy + Math.sin(endAngle) * r;
+    
+    const largeArcFlag = (endAngle - startAngle) > Math.PI ? 1 : 0;
+    
+    path.setAttribute('d',`M ${x1} ${y1} A ${r} ${r} 0 ${largeArcFlag} 1 ${x2} ${y2}`);
+    path.setAttribute('stroke',band.color);
+    path.setAttribute('stroke-width','12');
+    path.setAttribute('fill','none');
+    path.setAttribute('stroke-linecap','round');
+    el.appendChild(path);
+  });
+  
+  // Calculate needle position
+  const frac=maxValue?Math.max(0,Math.min(1,value/maxValue)):0;
+  const needleAngle=Math.PI + frac*Math.PI;
+  const nx=cx+Math.cos(needleAngle)*(r-8);
+  const ny=cy+Math.sin(needleAngle)*(r-8);
+  
+  // Draw needle
+  const needle=document.createElementNS('http://www.w3.org/2000/svg','line');
+  needle.setAttribute('x1',cx);
+  needle.setAttribute('y1',cy);
+  needle.setAttribute('x2',nx);
+  needle.setAttribute('y2',ny);
+  needle.setAttribute('stroke',ink);
+  needle.setAttribute('stroke-width','3');
+  needle.setAttribute('stroke-linecap','round');
+  el.appendChild(needle);
+  
+  // Draw center knob
+  const knob=document.createElementNS('http://www.w3.org/2000/svg','circle');
+  knob.setAttribute('cx',cx);
+  knob.setAttribute('cy',cy);
+  knob.setAttribute('r','6');
+  knob.setAttribute('fill',ink);
+  el.appendChild(knob);
+  
+  // Draw value text
+  const txt=document.createElementNS('http://www.w3.org/2000/svg','text');
+  txt.setAttribute('x',cx);
+  txt.setAttribute('y',cy-30);
+  txt.setAttribute('text-anchor','middle');
+  txt.setAttribute('font-size','18');
+  txt.setAttribute('font-weight','800');
+  txt.setAttribute('fill',ink);
+  txt.textContent=`${(value||0).toFixed(2)} / ${maxValue}`;
+  el.appendChild(txt);
+}
+
+/* Dashboard render */
+const sel=document.getElementById('assetSelect');
+function avg(a){return a.length? a.reduce((x,y)=>x+y,0)/a.length : 0;}
+function setKpis(L,I,score,total,pa){const maxScore=SCALE*SCALE;document.getElementById('ratingText').textContent=rating(score);document.getElementById('ratingScale').textContent=`Scale aware thresholds, ${maxScore.toFixed(0)} max risk`;document.getElementById('riskBadge').innerHTML=badge(rating(score));drawGauge('g_total', total, 6*SCALE);drawGauge('g_pa', pa, 1.0);drawGauge('g_L', L, SCALE);drawGauge('g_I', I, SCALE);drawGauge('g_score', score, maxScore);}
+function setInfo(r){const full=[['C','Criticality'],['A','Accessibility'],['R','Recuperability'],['V','Vulnerability'],['E','Effect'],['Rz','Recognizability']];const fmt=v=>Number(v??0).toFixed(2);document.getElementById('f_name').textContent=r.name||'';document.getElementById('f_type').textContent=r.type||'';document.getElementById('f_country').textContent=r.country||'';document.getElementById('f_location').textContent=r.location||'';document.getElementById('f_notes').textContent=r.notes||'';document.getElementById('f_carver').innerHTML=full.map(([k,lab])=>`${lab}: <b>${fmt(r[k])}</b>`).join('<br>');}
+function updateView(){resizeCanvas();const rect=radar.getBoundingClientRect();const cx=rect.width/2,cy=rect.height/2,R=Math.min(rect.width,rect.height)*.36;rctx.clearRect(0,0,rect.width,rect.height);const axes=['C','A','R','V','E','Rz'];drawGrid(cx,cy,R,axes);const legend=document.getElementById('legend');legend.innerHTML='';if(!DATA.length){['g_total','g_pa','g_L','g_I','g_score'].forEach(id=>{const el=document.getElementById(id);while(el.firstChild)el.removeChild(el.firstChild);});document.getElementById('ratingText').textContent='';document.getElementById('ratingScale').textContent='';document.getElementById('riskBadge').innerHTML='';return;} if(sel.value==='__ALL__' || !sel.value){const colors=PALETTE;DATA.forEach((r,i)=>{drawPoly(cx,cy,R,axes,axes.map(k=>r[k]),colors[i%colors.length]);const chip=document.createElement('div');chip.className='item';chip.innerHTML=`<span class="sw" style="background:${colors[i%colors.length]}"></span>${r.name||('Asset '+(i+1))}`;legend.appendChild(chip);});const L=avg(DATA.map(r=>r.L)),I=avg(DATA.map(r=>r.I)),score=L*I,total=avg(DATA.map(r=>r.totalCarver)),pa=avg(DATA.map(r=>r.pa));setKpis(L,I,score,total,pa);setInfo({name:'All Assets',type:'—',country:'—',location:'—',notes:'Averages of the set',C:avg(DATA.map(r=>r.C)),A:avg(DATA.map(r=>r.A)),R:avg(DATA.map(r=>r.R)),V:avg(DATA.map(r=>r.V)),E:avg(DATA.map(r=>r.E)),Rz:avg(DATA.map(r=>r.Rz))});} else {const i=Number(sel.value);const r=DATA[i];drawPoly(cx,cy,R,axes,axes.map(k=>r[k]),PALETTE[0]);setKpis(r.L,r.I,r.score,r.totalCarver,r.pa);setInfo(r);}}
+sel.addEventListener('change', updateView);
+
+/* Editor wiring */
+const editSelect=document.getElementById('editSelect');
+['in_C','in_A','in_R','in_V','in_E','in_Rz','in_notes'].forEach(id=>{const el=document.getElementById(id);if(el) el.addEventListener('input',applyEdit);});
+if(editSelect) editSelect.addEventListener('change', loadEditFields);
+function loadEditFields(){const idx=Number(editSelect.value||0);const r=DATA[idx]; if(!r) return; document.getElementById('in_C').value=r.C;document.getElementById('in_A').value=r.A;document.getElementById('in_R').value=r.R;document.getElementById('in_V').value=r.V;document.getElementById('in_E').value=r.E;document.getElementById('in_Rz').value=r.Rz;document.getElementById('in_notes').value=r.notes||'';updateEditorGauges(r);}
+function applyEdit(){const idx=Number(editSelect.value||0);const r=DATA[idx]; if(!r) return; r.C=clamp(document.getElementById('in_C').value);r.A=clamp(document.getElementById('in_A').value);r.R=clamp(document.getElementById('in_R').value);r.V=clamp(document.getElementById('in_V').value);r.E=clamp(document.getElementById('in_E').value);r.Rz=clamp(document.getElementById('in_Rz').value);r.notes=document.getElementById('in_notes').value;const d=derive(r);r.L=d.L;r.I=d.I;r.totalCarver=d.totalCarver;r.pa=d.pa;r.score=d.score;updateEditorGauges(r);refreshTable();updateView();}
+function updateEditorGauges(r){const maxScore=SCALE*SCALE;drawGauge('eg_C',r.C||0,SCALE);drawGauge('eg_A',r.A||0,SCALE);drawGauge('eg_R',r.R||0,SCALE);drawGauge('eg_V',r.V||0,SCALE);drawGauge('eg_E',r.E||0,SCALE);drawGauge('eg_Rz',r.Rz||0,SCALE);drawGauge('eg_L',r.L||0,SCALE);drawGauge('eg_I',r.I||0,SCALE);drawGauge('eg_total',r.totalCarver||0,6*SCALE);drawGauge('eg_score',r.score||0,maxScore);drawGauge('eg_pa',r.pa||0,1.0);document.getElementById('editRating').innerHTML=badge(rating(r.score||0));}
+
+/* Table */
+function refreshTable(){const tbody=document.querySelector('#dataTable tbody');tbody.innerHTML='';DATA.forEach((r,i)=>{const tr=document.createElement('tr');tr.innerHTML=`<td>${r.name||''}</td><td>${r.C.toFixed(2)}</td><td>${r.A.toFixed(2)}</td><td>${r.R.toFixed(2)}</td><td>${r.V.toFixed(2)}</td><td>${r.E.toFixed(2)}</td><td>${r.Rz.toFixed(2)}</td><td>${r.L.toFixed(2)}</td><td>${r.I.toFixed(2)}</td><td>${r.totalCarver.toFixed(2)}</td><td>${r.pa.toFixed(2)}</td><td>${r.score.toFixed(2)}</td><td>${badge(rating(r.score))}</td>`;tbody.appendChild(tr);});}
+
+/* Import/Export */
+const fileInput=document.getElementById('fileInput');
+document.getElementById('importBtn').addEventListener('click',()=>fileInput.click());
+fileInput.addEventListener('change',e=>{const file=e.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=ev=>{try{let parsed;if(file.name.endsWith('.json')){parsed=JSON.parse(ev.target.result);}else{const lines=ev.target.result.split('\n').filter(l=>l.trim());const headers=lines[0].split(',').map(h=>h.trim().replace(/"/g,''));parsed=lines.slice(1).map(line=>{const vals=line.split(',').map(v=>v.trim().replace(/"/g,''));const obj={};headers.forEach((h,i)=>obj[h]=vals[i]||'');return obj;});}if(parsed.length){SCALE=detectScale(parsed);scaleSelect.value=String(SCALE);localStorage.setItem('carverScale',String(SCALE));DATA=parsed.map(normalize);sel.disabled=false;sel.innerHTML='<option value="__ALL__">All Assets</option>'+DATA.map((r,i)=>`<option value="${i}">${r.name||('Asset '+(i+1))}</option>`).join('');editSelect.innerHTML=DATA.map((r,i)=>`<option value="${i}">${r.name||('Asset '+(i+1))}</option>`).join('');document.getElementById('emptyState').style.display='none';document.getElementById('infoGrid').style.display='grid';document.getElementById('editorEmpty').style.display='none';document.getElementById('editorContent').style.display='block';refreshTable();loadEditFields();updateView();}}catch(err){alert('Error parsing file: '+err.message);}};reader.readAsText(file);});
+
+/* Schema */
+const jsonSchema=`[
+  {
+    "name": "Asset Name",
+    "type": "Infrastructure",
+    "country": "US",
+    "location": "City, State",
+    "C": 4.5,
+    "A": 3.2,
+    "R": 2.8,
+    "V": 4.1,
+    "E": 3.9,
+    "Rz": 2.5,
+    "notes": "Additional context"
+  }
+]`;
+const csvTemplate=`name,type,country,location,C,A,R,V,E,Rz,notes
+"Power Plant","Infrastructure","US","Houston, TX",4.5,3.2,2.8,4.1,3.9,2.5,"Critical infrastructure"
+"Data Center","Technology","US","Virginia",3.8,4.2,3.5,3.9,4.1,3.2,"Cloud services"`;
+document.getElementById('jsonSchema').textContent=jsonSchema;
+document.getElementById('csvTemplate').textContent=csvTemplate;
+document.getElementById('schemaBtn').addEventListener('click',()=>document.getElementById('schemaPanel').style.display='block');
+document.getElementById('schemaClose').addEventListener('click',()=>document.getElementById('schemaPanel').style.display='none');
+document.getElementById('downloadJsonBtn').addEventListener('click',()=>{const blob=new Blob([jsonSchema],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='carver-schema.json';a.click();URL.revokeObjectURL(url);});
+document.getElementById('downloadCsvBtn').addEventListener('click',()=>{const blob=new Blob([csvTemplate],{type:'text/csv'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='carver-template.csv';a.click();URL.revokeObjectURL(url);});
+
+/* Export Functions */
+document.getElementById('exportJsonBtn').addEventListener('click',()=>{if(!DATA.length){alert('No data to export');return;}const blob=new Blob([JSON.stringify(DATA,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='carver-data.json';a.click();URL.revokeObjectURL(url);});
+
+document.getElementById('exportCsvBtn').addEventListener('click',()=>{if(!DATA.length){alert('No data to export');return;}const headers=['name','type','country','location','C','A','R','V','E','Rz','L','I','totalCarver','pa','score','notes'];const csv=[headers.join(','),...DATA.map(r=>headers.map(h=>`"${(r[h]||'').toString().replace(/"/g,'""')}"`).join(','))].join('\n');const blob=new Blob([csv],{type:'text/csv'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='carver-data.csv';a.click();URL.revokeObjectURL(url);});
+
+/* PDF Export Function */
+document.getElementById('exportPdfBtn').addEventListener('click', async () => {
+  if (!DATA.length) {
+    alert('No data to export');
+    return;
+  }
+  
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    
+    // Title
+    doc.setFontSize(20);
+    doc.text('OODA-CARVER Risk Assessment Report', 20, 20);
+    
+    // Date
+    doc.setFontSize(12);
+    doc.text(`Generated: ${new Date().toLocaleDateString()}`, 20, 35);
+    
+    // Summary Statistics
+    doc.setFontSize(14);
+    doc.text('Summary Statistics', 20, 50);
+    
+    const avgL = avg(DATA.map(r => r.L));
+    const avgI = avg(DATA.map(r => r.I));
+    const avgScore = avgL * avgI;
+    const avgTotal = avg(DATA.map(r => r.totalCarver));
+    const avgPa = avg(DATA.map(r => r.pa));
+    
+    doc.setFontSize(10);
+    doc.text(`Total Assets: ${DATA.length}`, 20, 65);
+    doc.text(`Average Likelihood: ${avgL.toFixed(2)}`, 20, 75);
+    doc.text(`Average Impact: ${avgI.toFixed(2)}`, 20, 85);
+    doc.text(`Average Risk Score: ${avgScore.toFixed(2)}`, 20, 95);
+    doc.text(`Average Total CARVER: ${avgTotal.toFixed(2)}`, 20, 105);
+    doc.text(`Average P(a): ${avgPa.toFixed(2)}`, 20, 115);
+    doc.text(`Overall Risk Rating: ${rating(avgScore)}`, 20, 125);
+    
+    // Asset Details
+    doc.setFontSize(14);
+    doc.text('Asset Details', 20, 145);
+    
+    let yPos = 160;
+    DATA.forEach((asset, index) => {
+      if (yPos > 250) {
+        doc.addPage();
+        yPos = 20;
+      }
+      
+      doc.setFontSize(12);
+      doc.text(`${index + 1}. ${asset.name || 'Unnamed Asset'}`, 20, yPos);
+      yPos += 10;
+      
+      doc.setFontSize(10);
+      doc.text(`Type: ${asset.type || 'N/A'}`, 25, yPos);
+      doc.text(`Location: ${asset.location || 'N/A'}`, 25, yPos + 10);
+      doc.text(`Country: ${asset.country || 'N/A'}`, 25, yPos + 20);
+      
+      doc.text(`CARVER Scores - C: ${asset.C.toFixed(2)}, A: ${asset.A.toFixed(2)}, R: ${asset.R.toFixed(2)}`, 25, yPos + 35);
+      doc.text(`V: ${asset.V.toFixed(2)}, E: ${asset.E.toFixed(2)}, Rz: ${asset.Rz.toFixed(2)}`, 25, yPos + 45);
+      
+      doc.text(`Likelihood: ${asset.L.toFixed(2)}, Impact: ${asset.I.toFixed(2)}`, 25, yPos + 60);
+      doc.text(`Risk Score: ${asset.score.toFixed(2)}, Rating: ${rating(asset.score)}`, 25, yPos + 70);
+      doc.text(`Total CARVER: ${asset.totalCarver.toFixed(2)}, P(a): ${asset.pa.toFixed(2)}`, 25, yPos + 80);
+      
+      if (asset.notes) {
+        doc.text(`Notes: ${asset.notes.substring(0, 80)}${asset.notes.length > 80 ? '...' : ''}`, 25, yPos + 95);
+        yPos += 110;
+      } else {
+        yPos += 95;
+      }
+    });
+    
+    // Save the PDF
+    doc.save('carver-risk-assessment-report.pdf');
+    
+  } catch (error) {
+    console.error('PDF export error:', error);
+    alert('Error generating PDF report. Please try again.');
+  }
+});
+
+/* Excel Export Function */
+document.getElementById('exportXlsBtn').addEventListener('click', () => {
+  if (!DATA.length) {
+    alert('No data to export');
+    return;
+  }
+  
+  try {
+    // Create workbook
+    const wb = XLSX.utils.book_new();
+    
+    // Prepare data for the main sheet
+    const wsData = [
+      ['Asset Name', 'Type', 'Country', 'Location', 'Criticality (C)', 'Accessibility (A)', 'Recuperability (R)', 'Vulnerability (V)', 'Effect (E)', 'Recognizability (Rz)', 'Likelihood (L)', 'Impact (I)', 'Total CARVER', 'P(a)', 'Risk Score', 'Risk Rating', 'Notes']
+    ];
+    
+    DATA.forEach(asset => {
+      wsData.push([
+        asset.name || '',
+        asset.type || '',
+        asset.country || '',
+        asset.location || '',
+        asset.C,
+        asset.A,
+        asset.R,
+        asset.V,
+        asset.E,
+        asset.Rz,
+        asset.L,
+        asset.I,
+        asset.totalCarver,
+        asset.pa,
+        asset.score,
+        rating(asset.score),
+        asset.notes || ''
+      ]);
+    });
+    
+    // Create main worksheet
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    
+    // Set column widths
+    ws['!cols'] = [
+      { wch: 20 }, // Asset Name
+      { wch: 15 }, // Type
+      { wch: 10 }, // Country
+      { wch: 20 }, // Location
+      { wch: 12 }, // C
+      { wch: 12 }, // A
+      { wch: 12 }, // R
+      { wch: 12 }, // V
+      { wch: 12 }, // E
+      { wch: 12 }, // Rz
+      { wch: 12 }, // L
+      { wch: 12 }, // I
+      { wch: 12 }, // Total
+      { wch: 10 }, // P(a)
+      { wch: 12 }, // Score
+      { wch: 12 }, // Rating
+      { wch: 30 }  // Notes
+    ];
+    
+    XLSX.utils.book_append_sheet(wb, ws, 'CARVER Assessment');
+    
+    // Create summary sheet
+    const avgL = avg(DATA.map(r => r.L));
+    const avgI = avg(DATA.map(r => r.I));
+    const avgScore = avgL * avgI;
+    const avgTotal = avg(DATA.map(r => r.totalCarver));
+    const avgPa = avg(DATA.map(r => r.pa));
+    
+    const summaryData = [
+      ['OODA-CARVER Risk Assessment Summary'],
+      ['Generated:', new Date().toLocaleDateString()],
+      [''],
+      ['Metric', 'Value'],
+      ['Total Assets', DATA.length],
+      ['Average Likelihood (L)', avgL.toFixed(2)],
+      ['Average Impact (I)', avgI.toFixed(2)],
+      ['Average Risk Score', avgScore.toFixed(2)],
+      ['Average Total CARVER', avgTotal.toFixed(2)],
+      ['Average P(a)', avgPa.toFixed(2)],
+      ['Overall Risk Rating', rating(avgScore)],
+      [''],
+      ['Risk Distribution'],
+      ['Critical', DATA.filter(r => rating(r.score) === 'Critical').length],
+      ['High', DATA.filter(r => rating(r.score) === 'High').length],
+      ['Medium', DATA.filter(r => rating(r.score) === 'Medium').length],
+      ['Low', DATA.filter(r => rating(r.score) === 'Low').length],
+      ['Very Low', DATA.filter(r => rating(r.score) === 'Very Low').length]
+    ];
+    
+    const summaryWs = XLSX.utils.aoa_to_sheet(summaryData);
+    summaryWs['!cols'] = [{ wch: 25 }, { wch: 15 }];
+    
+    XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary');
+    
+    // Save the file
+    XLSX.writeFile(wb, 'carver-risk-assessment.xlsx');
+    
+  } catch (error) {
+    console.error('Excel export error:', error);
+    alert('Error generating Excel file. Please try again.');
+  }
+});
+
+/* Add Asset */
+document.getElementById('add_btn').addEventListener('click',()=>{const r={name:document.getElementById('add_name').value||'',type:document.getElementById('add_type').value||'',country:document.getElementById('add_country').value||'',location:document.getElementById('add_location').value||'',C:clamp(document.getElementById('add_C').value),A:clamp(document.getElementById('add_A').value),R:clamp(document.getElementById('add_R').value),V:clamp(document.getElementById('add_V').value),E:clamp(document.getElementById('add_E').value),Rz:clamp(document.getElementById('add_Rz').value),notes:document.getElementById('add_notes').value||''};const d=derive(r);r.L=d.L;r.I=d.I;r.totalCarver=d.totalCarver;r.pa=d.pa;r.score=d.score;DATA.push(r);sel.disabled=false;sel.innerHTML='<option value="__ALL__">All Assets</option>'+DATA.map((r,i)=>`<option value="${i}">${r.name||('Asset '+(i+1))}</option>`).join('');editSelect.innerHTML=DATA.map((r,i)=>`<option value="${i}">${r.name||('Asset '+(i+1))}</option>`).join('');document.getElementById('emptyState').style.display='none';document.getElementById('infoGrid').style.display='grid';document.getElementById('editorEmpty').style.display='none';document.getElementById('editorContent').style.display='block';refreshTable();loadEditFields();updateView();});
+document.getElementById('add_clear').addEventListener('click',()=>{['add_name','add_type','add_country','add_location','add_notes'].forEach(id=>document.getElementById(id).value='');['add_C','add_A','add_R','add_V','add_E','add_Rz'].forEach(id=>document.getElementById(id).value='0');});
+
+/* Initialize */
+resizeCanvas();
+
+// Add some sample data for testing
+setTimeout(() => {
+  const sampleData = [
+    {
+      name: "Power Plant Alpha",
+      type: "Infrastructure", 
+      country: "US",
+      location: "Houston, TX",
+      C: 4.5, A: 3.2, R: 2.8, V: 4.1, E: 3.9, Rz: 2.5,
+      notes: "Critical power infrastructure"
+    },
+    {
+      name: "Data Center Beta",
+      type: "Technology",
+      country: "US", 
+      location: "Virginia",
+      C: 3.8, A: 4.2, R: 3.5, V: 3.9, E: 4.1, Rz: 3.2,
+      notes: "Cloud services hub"
+    }
+  ];
+  
+  DATA = sampleData.map(normalize);
+  sel.disabled = false;
+  sel.innerHTML = '<option value="__ALL__">All Assets</option>' + 
+    DATA.map((r,i) => `<option value="${i}">${r.name||('Asset '+(i+1))}</option>`).join('');
+  editSelect.innerHTML = DATA.map((r,i) => `<option value="${i}">${r.name||('Asset '+(i+1))}</option>`).join('');
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('infoGrid').style.display = 'grid';
+  document.getElementById('editorEmpty').style.display = 'none';
+  document.getElementById('editorContent').style.display = 'block';
+  refreshTable();
+  loadEditFields();
+  updateView();
+}, 100);
+
+</script>
+</body>
+</html>
+
