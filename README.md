@@ -244,7 +244,7 @@ Issues and pull requests are welcome. Please include:
 
 ## License
 
-MIT.
+MIT LICENSE
 
 ---
 
